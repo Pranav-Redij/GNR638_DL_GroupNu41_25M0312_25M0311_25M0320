@@ -2,6 +2,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <ctime>
 
 using namespace std;
 
@@ -27,8 +28,20 @@ class ConvLayer {
             }
         }
 
+        // --- ONLY ADDED THESE TWO FUNCTIONS ---
+        long getParams() {
+            return (long)(k_size * k_size) + 1;
+        }
+
+        long getMACs(int in_h, int in_w) {
+            int out_h = in_h - k_size + 1;
+            int out_w = in_w - k_size + 1;
+            return (long)out_h * out_w * k_size * k_size;
+        }
+        // --------------------------------------
+
         vector<vector<double>> forward(const vector<vector<double>>& x) {
-            // IMPORTANT: Save input for backward pass
+            // Your original logic starts here...
             this->input = x; 
 
             int in_h = x.size();
@@ -53,35 +66,29 @@ class ConvLayer {
     }
 
     vector<vector<double>> backward(const vector<vector<double>>& grad_output, double learning_rate) {
+        // Your original logic starts here...
         int out_h = grad_output.size();
         int out_w = grad_output[0].size();
         int in_h = this->input.size();
         int in_w = this->input[0].size();
 
-        // 1. Temporary storage for gradients (so we don't change weights mid-loop)
         vector<vector<double>> g_weights(k_size, vector<double>(k_size, 0.0));
         vector<vector<double>> grad_input(in_h, vector<double>(in_w, 0.0));
         double g_bias = 0.0;
 
-        // 2. The Accumulation Loop
         for (int i = 0; i < out_h; i++) {
             for (int j = 0; j < out_w; j++) {
                 g_bias += grad_output[i][j];
 
                 for (int ki = 0; ki < k_size; ki++) {
                     for (int kj = 0; kj < k_size; kj++) {
-                        // Accumulate gradient for filter
                         g_weights[ki][kj] += this->input[i + ki][j + kj] * grad_output[i][j];
-                        
-                        // Accumulate gradient for the previous layer
-                        // (Uses the CURRENT filter values)
                         grad_input[i + ki][j + kj] += this->filter[ki][kj] * grad_output[i][j];
                     }
                 }
             }
         }
 
-        // 3. Update the weights ONLY AFTER the loops are completely finished
         for (int ki = 0; ki < k_size; ki++) {
             for (int kj = 0; kj < k_size; kj++) {
                 this->filter[ki][kj] -= learning_rate * g_weights[ki][kj];
@@ -89,14 +96,13 @@ class ConvLayer {
         }
         this->bias -= learning_rate * g_bias;
 
-        // 4. Return the error to the previous layer
         return grad_input;
     }
 };
 
 // Done --- Fully Connected Layer (1D) ---
 class FCLayer {
-public:
+    public:
     vector<vector<double>> weights;
     vector<double> bias;
     vector<double> input;
@@ -120,6 +126,18 @@ public:
                 this->weights[i][j] = ((rand() % 2000) / 10000.0) - 0.1;
             }
         }
+    }
+
+    // --- New Feature: Parameter Count ---
+    // Formula: (Inputs * Outputs) + Outputs (for biases)
+    long getParams() {
+        return (long)(in_size * out_size) + out_size;
+    }
+
+    // --- New Feature: MACs (Multiply-Accumulate Operations) ---
+    // Formula: Inputs * Outputs (each connection is a multiplication and addition)
+    long getMACs() {
+        return (long)in_size * out_size;
     }
 
     vector<double> forward(const vector<double>& x) {
@@ -358,9 +376,6 @@ class Loss {
 };
 
 
-
-
-// Only Dummy : The Manager Model ---
 class CNNModel {
 public:
     ConvLayer conv1;
@@ -371,44 +386,119 @@ public:
     SigmoidLayer sig1;
     Loss loss_fn;
 
-    // Constructor params based on dataset (28 or 32)
-    CNNModel() : 
-        conv1(1, 8, 3), 
-        fc1(1352, 10) // Example: 13x13x8 = 1352
-    {}
+    // Architecture logic for 28x28:
+    // Conv (3x3) -> 26x26
+    // MaxPool (2x2) -> 13x13
+    // Flatten -> 169
+    CNNModel() : conv1(3), fc1(169, 10) {}
 
-    vector<double> forward(vector<vector<double>> x) {
+    // --- New Feature: Summary Method ---
+    void printSummary(int in_h, int in_w) {
+        // Calculate dimensions based on your architecture logic
+        int c_out_h = in_h - conv1.k_size + 1;
+        int c_out_w = in_w - conv1.k_size + 1;
+        int p_out_h = c_out_h / pool1.stride;
+        int p_out_w = c_out_w / pool1.stride;
+
+        long total_params = conv1.getParams() + fc1.getParams();
+        long total_macs = conv1.getMACs(in_h, in_w) + fc1.getMACs();
+
+        cout << "\n--- CNN Model Summary ---" << endl;
+        cout << "ConvLayer Params: " << conv1.getParams() << " | MACs: " << conv1.getMACs(in_h, in_w) << endl;
+        cout << "FCLayer   Params: " << fc1.getParams()   << " | MACs: " << fc1.getMACs() << endl;
+        cout << "-------------------------" << endl;
+        cout << "Total Parameters: " << total_params << endl;
+        cout << "Total MACs:       " << total_macs << endl;
+        cout << "Total FLOPs:      " << total_macs * 2 << " (Approx)" << endl;
+        cout << "-------------------------\n" << endl;
+    }
+
+    vector<double> forward(const vector<vector<double>>& x) {
         auto out_conv = conv1.forward(x);
         auto out_relu = relu1.forward(out_conv);
         auto out_pool = pool1.forward(out_relu);
         auto out_flat = flatten.forward(out_pool);
         auto out_fc   = fc1.forward(out_flat);
-        auto final    = sig1.forward(out_fc);
-        return final;
+        return sig1.forward(out_fc);
     }
 
-    void backward(vector<double> initial_grad) {
-        auto g_sig   = sig1.backward(initial_grad);
-        auto g_fc    = fc1.backward(g_sig);
+    void backward(const vector<double>& error_grad, double learning_rate) {
+        auto g_sig   = sig1.backward(error_grad);
+        auto g_fc    = fc1.backward(g_sig, learning_rate);
         auto g_flat  = flatten.backward(g_fc);
         auto g_pool  = pool1.backward(g_flat);
         auto g_relu  = relu1.backward(g_pool);
-        conv1.backward(g_relu);
+        conv1.backward(g_relu, learning_rate);
     }
 };
 
+// Generates a simple dataset: 0 = Vertical Line, 1 = Horizontal Line
+void generatePatternData(int size, vector<vector<vector<double>>>& images, vector<vector<double>>& labels) {
+    images.assign(size, vector<vector<double>>(28, vector<double>(28, 0.0)));
+    labels.assign(size, vector<double>(10, 0.0)); // Keeping 10 outputs to match your FC layer
+
+    for (int i = 0; i < size; i++) {
+        if (i % 2 == 0) {
+            // Pattern 0: Vertical line in the middle
+            for (int r = 0; r < 28; r++) images[i][r][14] = 1.0;
+            labels[i][0] = 1.0; 
+        } else {
+            // Pattern 1: Horizontal line in the middle
+            for (int c = 0; c < 28; c++) images[i][14][c] = 1.0;
+            labels[i][1] = 1.0;
+        }
+    }
+}
+
 int main() {
+    srand(42); // Fixed seed for reproducibility
     CNNModel model;
     
-    // Dataset 1: 2D representation
-    vector<vector<double>> image(28, vector<double>(28, 0.1));
-    vector<double> target(10, 0.0); target[3] = 1.0; // One-hot example
+    // --- NEW FEATURE CALL ---
+    // This will print the Params, MACs, and FLOPs before training begins
+    model.printSummary(28, 28); 
 
-    // --- Training Step ---
-    vector<double> prediction = model.forward(image);
-    vector<double> error_grad = model.loss_fn.backward(prediction, target);
-    model.backward(error_grad);
+    double learning_rate = 0.02;
+    int train_size = 400;
+    int test_size = 100;
 
-    cout << "Unified 2D/1D CNN Model Skeleton is ready." << endl;
+    vector<vector<vector<double>>> train_images, test_images;
+    vector<vector<double>> train_labels, test_labels;
+
+    // Generate Data
+    generatePatternData(train_size, train_images, train_labels);
+    generatePatternData(test_size, test_images, test_labels);
+
+    cout << "Training on Pattern Dataset (Vertical vs Horizontal)..." << endl;
+
+    // --- Training Loop ---
+    for (int epoch = 1; epoch <= 1000; epoch++) {
+        double total_loss = 0;
+        for (int i = 0; i < train_size; i++) {
+            vector<double> pred = model.forward(train_images[i]);
+            total_loss += model.loss_fn.calculate(pred, train_labels[i]);
+            
+            vector<double> grad = model.loss_fn.backward(pred, train_labels[i]);
+            model.backward(grad, learning_rate);
+        }
+        if (epoch % 100 == 0) 
+            cout << "Epoch " << epoch << " | Avg Loss: " << (total_loss / train_size) << endl;
+    }
+
+    // --- Testing Phase ---
+    int correct = 0;
+    for (int i = 0; i < test_size; i++) {
+        vector<double> pred = model.forward(test_images[i]);
+        
+        // Find which index has the highest probability (Argmax)
+        int predicted_label = distance(pred.begin(), max_element(pred.begin(), pred.end()));
+        int actual_label = (i % 2 == 0) ? 0 : 1;
+
+        if (predicted_label == actual_label) correct++;
+    }
+
+    cout << "-------------------------------------------" << endl;
+    cout << "Test Accuracy: " << (double)correct / test_size * 100 << "%" << endl;
+    
     return 0;
 }
