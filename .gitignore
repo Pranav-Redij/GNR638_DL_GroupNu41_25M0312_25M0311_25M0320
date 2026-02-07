@@ -1,7 +1,6 @@
 .venv/
 .vscode/
 __pycache__/
-*.so
 *.pyd
 .DS_Store
 Assign1/.DS_Store
