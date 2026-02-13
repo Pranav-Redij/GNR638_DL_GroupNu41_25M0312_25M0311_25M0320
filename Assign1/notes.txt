@@ -1,0 +1,11 @@
+1.For binding the file, command
+  (if running of python13)
+g++ -O3 -Wall -shared -std=c++11 -fPIC $(python3 -m pybind11 --includes) bindings.cpp -o cnn_engine.cpython-313-darwin.so -undefined dynamic_lookup
+
+2. if running of python 10 
+g++ -O3 -Wall -shared -std=c++11 -fPIC $(/usr/local/bin/python3 -m pybind11 --includes) bindings.cpp -o cnn_engine.cpython-310-darwin.so -undefined dynamic_lookup
+
+[to install the pybind11 ]
+/usr/local/bin/python3 -m pip install pybind11
+
+
