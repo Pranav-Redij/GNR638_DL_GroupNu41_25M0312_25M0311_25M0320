@@ -466,7 +466,7 @@ train_dataset(
 # Test Dataset  
 # -------- Load Dataset --------
 X, Y, auto_size, class_to_idx, idx_to_class = load_and_process_data(
-    "Assignment_1_Datasets/data_2"
+    "Assignment_1_Datasets/data_1"
 )
 
 num_classes = len(class_to_idx)
@@ -483,12 +483,8 @@ elif auto_size == 32 and num_classes == 100:
 else:
     raise ValueError("Dataset does not match any trained model.")
 
-# -------- Shuffle & Split (80/20) --------
-combined = list(zip(X, Y))
-random.shuffle(combined)
-
-split = int(0.8 * len(combined))
-test_data = combined[split:]
+# -------- Use Entire Dataset For Testing --------
+test_data = list(zip(X, Y))
 
 # -------- Detect Channels --------
 # Loader always returns [C][H][W]
@@ -513,7 +509,6 @@ for x_img, y_label in test_data:
     logits = model.forward(x_img)
     probs = model.loss.softmax(logits)
     
-    # Manual argmax for prediction
     pred_class = 0
     max_prob = probs[0]
     for i in range(1, len(probs)):
@@ -521,7 +516,6 @@ for x_img, y_label in test_data:
             max_prob = probs[i]
             pred_class = i
     
-    # Manual argmax for label
     true_class = 0
     for i in range(len(y_label)):
         if y_label[i] == 1.0:
@@ -533,7 +527,6 @@ for x_img, y_label in test_data:
 
 accuracy = 100 * test_correct / len(test_data)
 print(f"Final Test Accuracy: {accuracy:.2f}%")
-
 
 
 # %%
